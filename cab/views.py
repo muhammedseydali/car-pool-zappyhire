@@ -1,3 +1,4 @@
+from asyncio import start_unix_server
 from django.shortcuts import render
 from django.db import transaction
 from django.http import HttpResponse
@@ -6,7 +7,7 @@ from accounts import serializers
 
 from accounts.serializers import UserRegister
 from accounts.models import Account
-from .models import Ride, RideRequest
+from .models import Copassenger, Ride, RideRequest
 from cab.serializers import RideSerializer, RideRequestSerializer, GetRiderInfo, UserInfoSerializer
 
 from rest_framework import status
@@ -31,6 +32,16 @@ class Ride_Create(APIView):
             return Response(data = data)
 
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_rides_object(request, id):
+    get_rides_list = Ride.objects.get(id=id)
+    serializers = GetRiderInfo(get_rides_list)
+    return Response(serializers.data, status=status.HTTP_OK)
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def get_rides(request):
@@ -48,7 +59,7 @@ def get_rides(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def send_rie_request(request, user_id):
+def send_ride_request(request, user_id):
     from_user = request.user
     id_ride = request.data['id_ride']
     ride_id  = Ride.objects.get(id=id_ride)
@@ -62,3 +73,37 @@ def send_rie_request(request, user_id):
     else:
         return Response(status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(['POST'])
+@permission_classes(IsAuthenticated)
+def accept_ride_request(request, id):
+    ride_request = RideRequest.objects.get(id=id)
+
+    print('the requested usr is', request.user)
+    if ride_request.to_user == request.user:
+        co_passenger = Copassenger.objects.create(passenger_name=ride_request.from_user, ride = ride_request.ride_id)
+
+        seat_count = Ride.objects.get(id = ride_request.ride_id.id)
+
+        seat_count.seat = seat_count.seat - 1
+        seat_count.save()
+
+        ride_request.delete()
+
+        return Response(status = status.HTTP_200_OK)
+    else:
+        ride_request.delete()
+        print('request rejected')
+        return Response(status = status.HTTP_400_BAD_REQUEST)    
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_all_rides(request):
+    ride_request = RideRequest.objects.filter(to_user = request.user.id)
+
+    serializer = RideRequestSerializer(ride_request, many=True)
+    if ride_request:
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    else:
+        return Response(serializer.data, status=status.HTTP_400_BAD_REQUEST)    
